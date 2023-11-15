@@ -26,6 +26,20 @@ from spotify_dl.youtube import (
 )
 
 
+# Core changes in this fork:
+# - Input option to get spotify urls from a file
+# - Option to filter tracks according to the number of artists present (solo
+#   piano should have at max 2)
+# - During the download process, downloaded links are cached to remove repeats
+
+
+MAX_ARTISTS = 2
+
+
+def parse_file(file_path: str):
+    return [line.strip() for line in open(file_path) if line.startswith("http")]
+
+
 def spotify_dl():
     """Main entry point of the script."""
     parser = argparse.ArgumentParser(prog="spotify_dl")
@@ -124,6 +138,14 @@ def spotify_dl():
         help="Use multiprocessing [-m [int:numcores]",
     )
     parser.add_argument(
+        "-fl",
+        "--file",
+        action="store",
+        type=str,
+        default="",
+        help="Path to text file containing Spotify urls",
+    )
+    parser.add_argument(
         "-p",
         "--proxy",
         action="store",
@@ -168,8 +190,16 @@ def spotify_dl():
             else:
                 setattr(args, key, value)
 
+    if args.file:
+        if args.url:
+            args.url += parse_file(args.file)
+        else:
+            args.url = parse_file(args.file)
+
     if not args.url:
         raise (Exception("No playlist url provided:"))
+    else:
+        args.url = list(set(args.url))
 
     tokens = get_tokens()
     if tokens is None:
@@ -198,7 +228,7 @@ def spotify_dl():
         )
         url_dict["save_path"].mkdir(parents=True, exist_ok=True)
         log.info("Saving songs to %s directory", directory_name)
-        url_dict["songs"] = fetch_tracks(sp, item_type, item_id)
+        url_dict["songs"] = fetch_tracks(sp, item_type, item_id, MAX_ARTISTS)
         url_data["urls"].append(url_dict.copy())
     if args.dump_json is True:
         dump_json(url_dict["songs"])

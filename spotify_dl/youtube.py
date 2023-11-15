@@ -138,12 +138,16 @@ def set_tags(temp, filename, kwargs):
     song_file.save()
 
 
-def find_and_download_songs(kwargs):
+def find_and_download_songs(kwargs, seen_links=None):
     """
     function handles actual download of the songs
     the youtube_search lib is used to search for songs and get best url
     :param kwargs: dictionary of key value arguments to be used in download
     """
+    # Create fresh if not passed into process
+    if seen_links is None:
+        seen_links = {}
+
     sponsorblock_postprocessor = []
     reference_file = kwargs["reference_file"]
     files = {}
@@ -161,7 +165,9 @@ def find_and_download_songs(kwargs):
             print(f"Initiating download for {query}.")
 
             file_name = kwargs["file_name_f"](
-                name=name, artist=artist, track_num=kwargs["track_db"][i].get("playlist_num")
+                name=name,
+                artist=artist,
+                track_num=kwargs["track_db"][i].get("playlist_num"),
             )
 
             if kwargs["use_sponsorblock"][0].lower() == "y":
@@ -224,7 +230,15 @@ def find_and_download_songs(kwargs):
                 ydl_opts["postprocessors"].append(mp3_postprocess_opts.copy())
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 try:
-                    ydl.download([query])
+                    __id = ydl.extract_info(query, download=False)["entries"][0]["id"]
+
+                    if seen_links.get(__id, False) == False:
+                        ydl.download([query])
+                    else:
+                        print(
+                            f"Skipping video with id = {__id}, already present in the cache"
+                        )
+                    seen_links[__id] = True
                 except Exception as e:  # skipcq: PYL-W0703
                     log.debug(e)
                     print(f"Failed to download {name}, make sure yt_dlp is up to date")
@@ -271,20 +285,24 @@ def multicore_find_and_download_songs(kwargs):
 
     processes = []
     segment_index = 0
-    for segment in file_segments:
-        p = multiprocessing.Process(
-            target=multicore_handler, args=(segment_index, segment, kwargs.copy())
-        )
-        processes.append(p)
-        segment_index += 1
+    with multiprocessing.Manager() as manager:
+        seen_links = manager.dict()
 
-    for p in processes:
-        p.start()
-    for p in processes:
-        p.join()
+        for segment in file_segments:
+            p = multiprocessing.Process(
+                target=multicore_handler,
+                args=(segment_index, segment, kwargs.copy(), seen_links),
+            )
+            processes.append(p)
+            segment_index += 1
+
+        for p in processes:
+            p.start()
+        for p in processes:
+            p.join()
 
 
-def multicore_handler(segment_index, segment, kwargs):
+def multicore_handler(segment_index, segment, kwargs, seen_links):
     """
     function to handle each unique processor spawned download job
     :param segment_index: to be used for naming the reference file to be used for processor's download batch
@@ -296,7 +314,7 @@ def multicore_handler(segment_index, segment, kwargs):
             file_out.write(line)
 
     kwargs["reference_file"] = reference_filename
-    find_and_download_songs(kwargs)
+    find_and_download_songs(kwargs, seen_links)
 
     if os.path.exists(reference_filename):
         os.remove(reference_filename)

@@ -4,7 +4,7 @@ from spotify_dl.utils import sanitize
 from rich.progress import Progress
 
 
-def fetch_tracks(sp, item_type, item_id):
+def fetch_tracks(sp, item_type, item_id, max_artists: int):
     """
     Fetches tracks from the provided item_id.
     :param sp: Spotify client
@@ -38,6 +38,9 @@ def fetch_tracks(sp, item_type, item_id):
                     # If the user has a podcast in their playlist, there will be no track
                     # Without this conditional, the program will fail later on when the metadata is fetched
                     if track_info is None:
+                        offset += 1
+                        continue
+                    if len(track_info.get("artists")) > max_artists:
                         offset += 1
                         continue
                     track_album_info = track_info.get("album")
@@ -221,8 +224,8 @@ def parse_spotify_url(url):
         sys.exit(1)
     parsed_url = url.replace("https://open.spotify.com/", "").split("?")[0].split("/")
     index_adjustment = 1 if parsed_url[0].startswith("intl") else 0
-    item_type = parsed_url[0+index_adjustment]
-    item_id = parsed_url[1+index_adjustment]
+    item_type = parsed_url[0 + index_adjustment]
+    item_id = parsed_url[1 + index_adjustment]
     return item_type, item_id
 
 
